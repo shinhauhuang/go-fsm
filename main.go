@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"go-fsm/fsm" // Import the fsm package
+	"go-fsm/ent"
+	"go-fsm/fsm"
+	"log"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // Define states for a turnstile
@@ -18,68 +23,67 @@ const (
 )
 
 func main() {
-	fmt.Println("--- FSM with OnEntry/OnExit, Guards, and Callbacks ---")
+	// 1. Create an in-memory SQLite ent client
+	client, err := ent.Open("sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		log.Fatalf("failed opening connection to sqlite: %v", err)
+	}
+	defer client.Close()
 
-	// 1. Define all transitions
+	// 2. Run the auto migration tool to create the schema
+	ctx := context.Background()
+	if err := client.Schema.Create(ctx); err != nil {
+		log.Fatalf("failed creating schema resources: %v", err)
+	}
+
+	fmt.Println("--- FSM with Ent Persistence ---")
+
+	// 3. Define all transitions
 	transitions := []fsm.Transition{
 		{From: Locked, Event: Coin, To: Unlocked},
 		{From: Unlocked, Event: Push, To: Locked},
 	}
 
-	// 2. Create a new FSM instance
-	turnstile, err := fsm.NewFSM("turnstile-01", Locked, transitions)
+	// 4. Create a new FSM instance with the ent client
+	machineID := "turnstile-01"
+	turnstile, err := fsm.NewFSM(ctx, client, machineID, Locked, transitions)
 	if err != nil {
-		fmt.Printf("Failed to create FSM: %v\n", err)
-		return
+		log.Fatalf("Failed to create FSM: %v", err)
 	}
 
-	// 3. Configure actions, guards, and callbacks
+	// 5. Configure actions, guards, and callbacks
 	turnstile.OnEntry(Unlocked, func(args ...interface{}) error {
 		fmt.Println("  [OnEntry] Unlocked: Please pass through.")
-		return nil
-	})
-	turnstile.OnExit(Locked, func(args ...interface{}) error {
-		fmt.Println("  [OnExit] Locked: Processing payment...")
 		return nil
 	})
 	turnstile.AddGuard(Locked, Coin, func(args ...interface{}) bool {
 		fmt.Println("  [Guard] Checking if coin is valid... (approved)")
 		return true
 	})
-	turnstile.OnTransition(Locked, Coin, func(args ...interface{}) error {
-		fmt.Println("  [OnTransition] Coin transition is happening.")
-		return nil
-	})
 
-	fmt.Printf("Initial state: %s\n", turnstile.CurrentState())
+	fmt.Printf("Initial state (from DB or initial): %s\n", turnstile.CurrentState())
 
 	// --- Simulate Events ---
 
 	fmt.Println("\n1. Sending PUSH event (should fail, no transition)")
-	err = turnstile.Transition(Push)
+	err = turnstile.Transition(ctx, Push)
 	if err != nil {
 		fmt.Printf("  Error: %v\n", err)
 	}
 	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
 
 	fmt.Println("\n2. Sending COIN event (should succeed and unlock)")
-	err = turnstile.Transition(Coin)
+	err = turnstile.Transition(ctx, Coin)
 	if err != nil {
 		fmt.Printf("  Error: %v\n", err)
 	}
 	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
 
-	fmt.Println("\n3. Sending COIN event again (should fail, no transition)")
-	err = turnstile.Transition(Coin)
+	// --- Create a new FSM instance with the same ID to test loading from DB ---
+	fmt.Println("\n--- Re-creating FSM with same ID to test persistence ---")
+	turnstile2, err := fsm.NewFSM(ctx, client, machineID, Locked, transitions)
 	if err != nil {
-		fmt.Printf("  Error: %v\n", err)
+		log.Fatalf("Failed to create second FSM instance: %v", err)
 	}
-	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
-
-	fmt.Println("\n4. Sending PUSH event (should succeed and lock)")
-	err = turnstile.Transition(Push)
-	if err != nil {
-		fmt.Printf("  Error: %v\n", err)
-	}
-	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
+	fmt.Printf("State loaded from DB: %s\n", turnstile2.CurrentState())
 }

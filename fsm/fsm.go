@@ -1,8 +1,12 @@
 package fsm
 
 import (
+	"context" // Import context for database operations
 	"errors"
 	"fmt"
+
+	"go-fsm/ent"              // Import the generated Ent client
+	"go-fsm/ent/statemachine" // Import statemachine query
 )
 
 // State represents a state in the FSM.
@@ -26,7 +30,8 @@ type Transition struct {
 
 // FSM represents a Finite State Machine.
 type FSM struct {
-	machineID           string
+	client              *ent.Client // Ent client for persistence
+	machineID           string      // Unique ID for this FSM instance
 	currentState        State
 	transitions         map[State]map[Event]State
 	entryActions        map[State]Action
@@ -35,9 +40,11 @@ type FSM struct {
 	transitionCallbacks map[State]map[Event]Action
 }
 
-// NewFSM creates a new FSM with an initial state and a list of transitions.
-func NewFSM(machineID string, initialState State, transitions []Transition) (*FSM, error) {
+// NewFSM creates a new FSM with an initial state, a list of transitions, and an Ent client for persistence.
+// It will try to load the state from the database if a machineID is provided.
+func NewFSM(ctx context.Context, client *ent.Client, machineID string, initialState State, transitions []Transition) (*FSM, error) {
 	fsm := &FSM{
+		client:              client,
 		machineID:           machineID,
 		currentState:        initialState,
 		transitions:         make(map[State]map[Event]State),
@@ -54,6 +61,27 @@ func NewFSM(machineID string, initialState State, transitions []Transition) (*FS
 		fsm.transitions[t.From][t.Event] = t.To
 	}
 
+	// Try to load the state from the database if machineID is provided
+	if machineID != "" {
+		sm, err := client.StateMachine.Query().Where(statemachine.MachineID(machineID)).Only(ctx)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				// If not found, create a new entry
+				_, err := client.StateMachine.Create().
+					SetMachineID(machineID).
+					SetCurrentState(string(initialState)).
+					Save(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create new state machine entry: %w", err)
+				}
+			} else {
+				return nil, fmt.Errorf("failed to query state machine: %w", err)
+			}
+		} else {
+			fsm.currentState = State(sm.CurrentState)
+		}
+	}
+
 	return fsm, nil
 }
 
@@ -63,7 +91,7 @@ func (f *FSM) CurrentState() State {
 }
 
 // Transition attempts to transition the FSM to a new state based on an event.
-func (f *FSM) Transition(event Event, args ...interface{}) error {
+func (f *FSM) Transition(ctx context.Context, event Event, args ...interface{}) error {
 	nextStates, ok := f.transitions[f.currentState]
 	if !ok {
 		return fmt.Errorf("no transitions defined from state %s", f.currentState)
@@ -99,12 +127,26 @@ func (f *FSM) Transition(event Event, args ...interface{}) error {
 		}
 	}
 
+	previousState := f.currentState
 	f.currentState = nextState
 
 	// Execute entry action of the new state
 	if entryAction, ok := f.entryActions[f.currentState]; ok {
 		if err := entryAction(args...); err != nil {
 			return fmt.Errorf("entry action failed for state %s: %w", f.currentState, err)
+		}
+	}
+
+	// Persist the new state to the database
+	if f.client != nil && f.machineID != "" {
+		_, err := f.client.StateMachine.Update().
+			Where(statemachine.MachineID(f.machineID)).
+			SetCurrentState(string(f.currentState)).
+			Save(ctx)
+		if err != nil {
+			// Revert state if persistence fails
+			f.currentState = previousState
+			return fmt.Errorf("failed to persist state: %w", err)
 		}
 	}
 
