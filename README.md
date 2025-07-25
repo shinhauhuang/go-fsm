@@ -10,6 +10,30 @@ A simple and flexible Finite State Machine (FSM) library for Go.
 -   `fsm.Action`: A function `func(args ...interface{}) error` executed on entry, exit, or during a transition.
 -   `fsm.Guard`: A function `func(args ...interface{}) bool` that must return `true` for a transition to be allowed.
 
+## Database Configuration
+
+This project uses `ent` for persistence and supports both **SQLite** and **MariaDB**. The database driver can be configured using environment variables.
+
+-   `DB_DRIVER`: Set to `mariadb` to use MariaDB. If unset or set to any other value, it will default to an in-memory SQLite database.
+-   `DB_DSN`: When using `mariadb`, this **must** be set to your MariaDB Data Source Name (DSN). The application will exit if it's not set.
+    -   Format: `user:password@tcp(host:port)/dbname?parseTime=true`
+
+### Example
+
+To run with MariaDB:
+
+```sh
+export DB_DRIVER=mariadb
+export DB_DSN="myuser:mypass@tcp(localhost:3306)/my_fsm_db?parseTime=true"
+go run main.go
+```
+
+To run with the default in-memory SQLite:
+
+```sh
+go run main.go
+```
+
 ## How to Use
 
 ### 1. Define Transitions
