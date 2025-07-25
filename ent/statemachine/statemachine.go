@@ -4,6 +4,7 @@ package statemachine
 
 import (
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 const (
@@ -15,8 +16,17 @@ const (
 	FieldMachineID = "machine_id"
 	// FieldCurrentState holds the string denoting the current_state field in the database.
 	FieldCurrentState = "current_state"
+	// EdgeHistory holds the string denoting the history edge name in mutations.
+	EdgeHistory = "history"
 	// Table holds the table name of the statemachine in the database.
 	Table = "state_machines"
+	// HistoryTable is the table that holds the history relation/edge.
+	HistoryTable = "state_transitions"
+	// HistoryInverseTable is the table name for the StateTransition entity.
+	// It exists in this package in order to avoid circular dependency with the "statetransition" package.
+	HistoryInverseTable = "state_transitions"
+	// HistoryColumn is the table column denoting the history relation/edge.
+	HistoryColumn = "state_machine_history"
 )
 
 // Columns holds all SQL columns for statemachine fields.
@@ -59,4 +69,25 @@ func ByMachineID(opts ...sql.OrderTermOption) OrderOption {
 // ByCurrentState orders the results by the current_state field.
 func ByCurrentState(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCurrentState, opts...).ToFunc()
+}
+
+// ByHistoryCount orders the results by history count.
+func ByHistoryCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newHistoryStep(), opts...)
+	}
+}
+
+// ByHistory orders the results by history terms.
+func ByHistory(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newHistoryStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+func newHistoryStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(HistoryInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, HistoryTable, HistoryColumn),
+	)
 }

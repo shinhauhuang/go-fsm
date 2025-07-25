@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go-fsm/ent/predicate"
 	"go-fsm/ent/statemachine"
+	"go-fsm/ent/statetransition"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -55,9 +56,45 @@ func (smu *StateMachineUpdate) SetNillableCurrentState(s *string) *StateMachineU
 	return smu
 }
 
+// AddHistoryIDs adds the "history" edge to the StateTransition entity by IDs.
+func (smu *StateMachineUpdate) AddHistoryIDs(ids ...int) *StateMachineUpdate {
+	smu.mutation.AddHistoryIDs(ids...)
+	return smu
+}
+
+// AddHistory adds the "history" edges to the StateTransition entity.
+func (smu *StateMachineUpdate) AddHistory(s ...*StateTransition) *StateMachineUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return smu.AddHistoryIDs(ids...)
+}
+
 // Mutation returns the StateMachineMutation object of the builder.
 func (smu *StateMachineUpdate) Mutation() *StateMachineMutation {
 	return smu.mutation
+}
+
+// ClearHistory clears all "history" edges to the StateTransition entity.
+func (smu *StateMachineUpdate) ClearHistory() *StateMachineUpdate {
+	smu.mutation.ClearHistory()
+	return smu
+}
+
+// RemoveHistoryIDs removes the "history" edge to StateTransition entities by IDs.
+func (smu *StateMachineUpdate) RemoveHistoryIDs(ids ...int) *StateMachineUpdate {
+	smu.mutation.RemoveHistoryIDs(ids...)
+	return smu
+}
+
+// RemoveHistory removes "history" edges to StateTransition entities.
+func (smu *StateMachineUpdate) RemoveHistory(s ...*StateTransition) *StateMachineUpdate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return smu.RemoveHistoryIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -120,6 +157,51 @@ func (smu *StateMachineUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := smu.mutation.CurrentState(); ok {
 		_spec.SetField(statemachine.FieldCurrentState, field.TypeString, value)
 	}
+	if smu.mutation.HistoryCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   statemachine.HistoryTable,
+			Columns: []string{statemachine.HistoryColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(statetransition.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := smu.mutation.RemovedHistoryIDs(); len(nodes) > 0 && !smu.mutation.HistoryCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   statemachine.HistoryTable,
+			Columns: []string{statemachine.HistoryColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(statetransition.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := smu.mutation.HistoryIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   statemachine.HistoryTable,
+			Columns: []string{statemachine.HistoryColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(statetransition.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if n, err = sqlgraph.UpdateNodes(ctx, smu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{statemachine.Label}
@@ -168,9 +250,45 @@ func (smuo *StateMachineUpdateOne) SetNillableCurrentState(s *string) *StateMach
 	return smuo
 }
 
+// AddHistoryIDs adds the "history" edge to the StateTransition entity by IDs.
+func (smuo *StateMachineUpdateOne) AddHistoryIDs(ids ...int) *StateMachineUpdateOne {
+	smuo.mutation.AddHistoryIDs(ids...)
+	return smuo
+}
+
+// AddHistory adds the "history" edges to the StateTransition entity.
+func (smuo *StateMachineUpdateOne) AddHistory(s ...*StateTransition) *StateMachineUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return smuo.AddHistoryIDs(ids...)
+}
+
 // Mutation returns the StateMachineMutation object of the builder.
 func (smuo *StateMachineUpdateOne) Mutation() *StateMachineMutation {
 	return smuo.mutation
+}
+
+// ClearHistory clears all "history" edges to the StateTransition entity.
+func (smuo *StateMachineUpdateOne) ClearHistory() *StateMachineUpdateOne {
+	smuo.mutation.ClearHistory()
+	return smuo
+}
+
+// RemoveHistoryIDs removes the "history" edge to StateTransition entities by IDs.
+func (smuo *StateMachineUpdateOne) RemoveHistoryIDs(ids ...int) *StateMachineUpdateOne {
+	smuo.mutation.RemoveHistoryIDs(ids...)
+	return smuo
+}
+
+// RemoveHistory removes "history" edges to StateTransition entities.
+func (smuo *StateMachineUpdateOne) RemoveHistory(s ...*StateTransition) *StateMachineUpdateOne {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return smuo.RemoveHistoryIDs(ids...)
 }
 
 // Where appends a list predicates to the StateMachineUpdate builder.
@@ -262,6 +380,51 @@ func (smuo *StateMachineUpdateOne) sqlSave(ctx context.Context) (_node *StateMac
 	}
 	if value, ok := smuo.mutation.CurrentState(); ok {
 		_spec.SetField(statemachine.FieldCurrentState, field.TypeString, value)
+	}
+	if smuo.mutation.HistoryCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   statemachine.HistoryTable,
+			Columns: []string{statemachine.HistoryColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(statetransition.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := smuo.mutation.RemovedHistoryIDs(); len(nodes) > 0 && !smuo.mutation.HistoryCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   statemachine.HistoryTable,
+			Columns: []string{statemachine.HistoryColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(statetransition.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := smuo.mutation.HistoryIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   statemachine.HistoryTable,
+			Columns: []string{statemachine.HistoryColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(statetransition.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &StateMachine{config: smuo.config}
 	_spec.Assign = _node.assignValues

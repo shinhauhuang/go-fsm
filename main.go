@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go-fsm/ent"
+	"go-fsm/ent/statemachine"
 	"go-fsm/fsm"
 	"log"
 
@@ -36,7 +37,7 @@ func main() {
 		log.Fatalf("failed creating schema resources: %v", err)
 	}
 
-	fmt.Println("--- FSM with Ent Persistence ---")
+	fmt.Println("--- FSM with Ent Persistence and History ---")
 
 	// 3. Define all transitions
 	transitions := []fsm.Transition{
@@ -79,11 +80,25 @@ func main() {
 	}
 	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
 
-	// --- Create a new FSM instance with the same ID to test loading from DB ---
-	fmt.Println("\n--- Re-creating FSM with same ID to test persistence ---")
-	turnstile2, err := fsm.NewFSM(ctx, client, machineID, Locked, transitions)
+	fmt.Println("\n3. Sending PUSH event (should succeed and lock)")
+	err = turnstile.Transition(ctx, Push)
 	if err != nil {
-		log.Fatalf("Failed to create second FSM instance: %v", err)
+		fmt.Printf("  Error: %v\n", err)
 	}
-	fmt.Printf("State loaded from DB: %s\n", turnstile2.CurrentState())
+	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
+
+	// --- Query and display transition history ---
+	fmt.Println("\n--- Querying Transition History ---")
+	machine, err := client.StateMachine.Query().
+		Where(statemachine.MachineIDEQ(machineID)).
+		WithHistory().
+		Only(ctx)
+	if err != nil {
+		log.Fatalf("failed to query machine history: %v", err)
+	}
+
+	for _, record := range machine.Edges.History {
+		fmt.Printf("  - From: %s, To: %s, Event: %s, Time: %s\n",
+			record.FromState, record.ToState, record.Event, record.Timestamp.Format("15:04:05"))
+	}
 }

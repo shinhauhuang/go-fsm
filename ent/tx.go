@@ -14,6 +14,8 @@ type Tx struct {
 	config
 	// StateMachine is the client for interacting with the StateMachine builders.
 	StateMachine *StateMachineClient
+	// StateTransition is the client for interacting with the StateTransition builders.
+	StateTransition *StateTransitionClient
 
 	// lazily loaded.
 	client     *Client
@@ -146,6 +148,7 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.StateMachine = NewStateMachineClient(tx.config)
+	tx.StateTransition = NewStateTransitionClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

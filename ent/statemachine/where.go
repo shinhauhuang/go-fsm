@@ -6,6 +6,7 @@ import (
 	"go-fsm/ent/predicate"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 // ID filters vertices based on their ID field.
@@ -191,6 +192,29 @@ func CurrentStateEqualFold(v string) predicate.StateMachine {
 // CurrentStateContainsFold applies the ContainsFold predicate on the "current_state" field.
 func CurrentStateContainsFold(v string) predicate.StateMachine {
 	return predicate.StateMachine(sql.FieldContainsFold(FieldCurrentState, v))
+}
+
+// HasHistory applies the HasEdge predicate on the "history" edge.
+func HasHistory() predicate.StateMachine {
+	return predicate.StateMachine(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, HistoryTable, HistoryColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasHistoryWith applies the HasEdge predicate on the "history" edge with a given conditions (other predicates).
+func HasHistoryWith(preds ...predicate.StateTransition) predicate.StateMachine {
+	return predicate.StateMachine(func(s *sql.Selector) {
+		step := newHistoryStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

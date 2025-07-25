@@ -5,6 +5,8 @@ package ent
 import (
 	"go-fsm/ent/schema"
 	"go-fsm/ent/statemachine"
+	"go-fsm/ent/statetransition"
+	"time"
 )
 
 // The init function reads all schema descriptors with runtime code
@@ -21,4 +23,10 @@ func init() {
 	statemachineDescCurrentState := statemachineFields[1].Descriptor()
 	// statemachine.CurrentStateValidator is a validator for the "current_state" field. It is called by the builders before save.
 	statemachine.CurrentStateValidator = statemachineDescCurrentState.Validators[0].(func(string) error)
+	statetransitionFields := schema.StateTransition{}.Fields()
+	_ = statetransitionFields
+	// statetransitionDescTimestamp is the schema descriptor for timestamp field.
+	statetransitionDescTimestamp := statetransitionFields[3].Descriptor()
+	// statetransition.DefaultTimestamp holds the default value on creation for the timestamp field.
+	statetransition.DefaultTimestamp = statetransitionDescTimestamp.Default.(func() time.Time)
 }

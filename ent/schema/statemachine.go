@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 )
 
@@ -23,5 +24,9 @@ func (StateMachine) Fields() []ent.Field {
 
 // Edges of the StateMachine.
 func (StateMachine) Edges() []ent.Edge {
-	return nil
+	return []ent.Edge{
+		// Create a one-to-many relationship with StateTransition.
+		// This means a StateMachine can have many history records.
+		edge.To("history", StateTransition.Type),
+	}
 }

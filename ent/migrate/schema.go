@@ -20,11 +20,36 @@ var (
 		Columns:    StateMachinesColumns,
 		PrimaryKey: []*schema.Column{StateMachinesColumns[0]},
 	}
+	// StateTransitionsColumns holds the columns for the "state_transitions" table.
+	StateTransitionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "from_state", Type: field.TypeString},
+		{Name: "to_state", Type: field.TypeString},
+		{Name: "event", Type: field.TypeString},
+		{Name: "timestamp", Type: field.TypeTime},
+		{Name: "state_machine_history", Type: field.TypeInt, Nullable: true},
+	}
+	// StateTransitionsTable holds the schema information for the "state_transitions" table.
+	StateTransitionsTable = &schema.Table{
+		Name:       "state_transitions",
+		Columns:    StateTransitionsColumns,
+		PrimaryKey: []*schema.Column{StateTransitionsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "state_transitions_state_machines_history",
+				Columns:    []*schema.Column{StateTransitionsColumns[5]},
+				RefColumns: []*schema.Column{StateMachinesColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		StateMachinesTable,
+		StateTransitionsTable,
 	}
 )
 
 func init() {
+	StateTransitionsTable.ForeignKeys[0].RefTable = StateMachinesTable
 }

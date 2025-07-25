@@ -12,10 +12,12 @@ import (
 	"go-fsm/ent/migrate"
 
 	"go-fsm/ent/statemachine"
+	"go-fsm/ent/statetransition"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 // Client is the client that holds all ent builders.
@@ -25,6 +27,8 @@ type Client struct {
 	Schema *migrate.Schema
 	// StateMachine is the client for interacting with the StateMachine builders.
 	StateMachine *StateMachineClient
+	// StateTransition is the client for interacting with the StateTransition builders.
+	StateTransition *StateTransitionClient
 }
 
 // NewClient creates a new client configured with the given options.
@@ -37,6 +41,7 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.StateMachine = NewStateMachineClient(c.config)
+	c.StateTransition = NewStateTransitionClient(c.config)
 }
 
 type (
@@ -127,9 +132,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:          ctx,
-		config:       cfg,
-		StateMachine: NewStateMachineClient(cfg),
+		ctx:             ctx,
+		config:          cfg,
+		StateMachine:    NewStateMachineClient(cfg),
+		StateTransition: NewStateTransitionClient(cfg),
 	}, nil
 }
 
@@ -147,9 +153,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:          ctx,
-		config:       cfg,
-		StateMachine: NewStateMachineClient(cfg),
+		ctx:             ctx,
+		config:          cfg,
+		StateMachine:    NewStateMachineClient(cfg),
+		StateTransition: NewStateTransitionClient(cfg),
 	}, nil
 }
 
@@ -179,12 +186,14 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	c.StateMachine.Use(hooks...)
+	c.StateTransition.Use(hooks...)
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	c.StateMachine.Intercept(interceptors...)
+	c.StateTransition.Intercept(interceptors...)
 }
 
 // Mutate implements the ent.Mutator interface.
@@ -192,6 +201,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *StateMachineMutation:
 		return c.StateMachine.mutate(ctx, m)
+	case *StateTransitionMutation:
+		return c.StateTransition.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
 	}
@@ -305,6 +316,22 @@ func (c *StateMachineClient) GetX(ctx context.Context, id int) *StateMachine {
 	return obj
 }
 
+// QueryHistory queries the history edge of a StateMachine.
+func (c *StateMachineClient) QueryHistory(sm *StateMachine) *StateTransitionQuery {
+	query := (&StateTransitionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := sm.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(statemachine.Table, statemachine.FieldID, id),
+			sqlgraph.To(statetransition.Table, statetransition.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, statemachine.HistoryTable, statemachine.HistoryColumn),
+		)
+		fromV = sqlgraph.Neighbors(sm.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *StateMachineClient) Hooks() []Hook {
 	return c.hooks.StateMachine
@@ -330,12 +357,161 @@ func (c *StateMachineClient) mutate(ctx context.Context, m *StateMachineMutation
 	}
 }
 
+// StateTransitionClient is a client for the StateTransition schema.
+type StateTransitionClient struct {
+	config
+}
+
+// NewStateTransitionClient returns a client for the StateTransition from the given config.
+func NewStateTransitionClient(c config) *StateTransitionClient {
+	return &StateTransitionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `statetransition.Hooks(f(g(h())))`.
+func (c *StateTransitionClient) Use(hooks ...Hook) {
+	c.hooks.StateTransition = append(c.hooks.StateTransition, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `statetransition.Intercept(f(g(h())))`.
+func (c *StateTransitionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.StateTransition = append(c.inters.StateTransition, interceptors...)
+}
+
+// Create returns a builder for creating a StateTransition entity.
+func (c *StateTransitionClient) Create() *StateTransitionCreate {
+	mutation := newStateTransitionMutation(c.config, OpCreate)
+	return &StateTransitionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of StateTransition entities.
+func (c *StateTransitionClient) CreateBulk(builders ...*StateTransitionCreate) *StateTransitionCreateBulk {
+	return &StateTransitionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *StateTransitionClient) MapCreateBulk(slice any, setFunc func(*StateTransitionCreate, int)) *StateTransitionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &StateTransitionCreateBulk{err: fmt.Errorf("calling to StateTransitionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*StateTransitionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &StateTransitionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for StateTransition.
+func (c *StateTransitionClient) Update() *StateTransitionUpdate {
+	mutation := newStateTransitionMutation(c.config, OpUpdate)
+	return &StateTransitionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *StateTransitionClient) UpdateOne(st *StateTransition) *StateTransitionUpdateOne {
+	mutation := newStateTransitionMutation(c.config, OpUpdateOne, withStateTransition(st))
+	return &StateTransitionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *StateTransitionClient) UpdateOneID(id int) *StateTransitionUpdateOne {
+	mutation := newStateTransitionMutation(c.config, OpUpdateOne, withStateTransitionID(id))
+	return &StateTransitionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for StateTransition.
+func (c *StateTransitionClient) Delete() *StateTransitionDelete {
+	mutation := newStateTransitionMutation(c.config, OpDelete)
+	return &StateTransitionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *StateTransitionClient) DeleteOne(st *StateTransition) *StateTransitionDeleteOne {
+	return c.DeleteOneID(st.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *StateTransitionClient) DeleteOneID(id int) *StateTransitionDeleteOne {
+	builder := c.Delete().Where(statetransition.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &StateTransitionDeleteOne{builder}
+}
+
+// Query returns a query builder for StateTransition.
+func (c *StateTransitionClient) Query() *StateTransitionQuery {
+	return &StateTransitionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeStateTransition},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a StateTransition entity by its id.
+func (c *StateTransitionClient) Get(ctx context.Context, id int) (*StateTransition, error) {
+	return c.Query().Where(statetransition.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *StateTransitionClient) GetX(ctx context.Context, id int) *StateTransition {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMachine queries the machine edge of a StateTransition.
+func (c *StateTransitionClient) QueryMachine(st *StateTransition) *StateMachineQuery {
+	query := (&StateMachineClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := st.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(statetransition.Table, statetransition.FieldID, id),
+			sqlgraph.To(statemachine.Table, statemachine.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, statetransition.MachineTable, statetransition.MachineColumn),
+		)
+		fromV = sqlgraph.Neighbors(st.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *StateTransitionClient) Hooks() []Hook {
+	return c.hooks.StateTransition
+}
+
+// Interceptors returns the client interceptors.
+func (c *StateTransitionClient) Interceptors() []Interceptor {
+	return c.inters.StateTransition
+}
+
+func (c *StateTransitionClient) mutate(ctx context.Context, m *StateTransitionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&StateTransitionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&StateTransitionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&StateTransitionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&StateTransitionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown StateTransition mutation op: %q", m.Op())
+	}
+}
+
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		StateMachine []ent.Hook
+		StateMachine, StateTransition []ent.Hook
 	}
 	inters struct {
-		StateMachine []ent.Interceptor
+		StateMachine, StateTransition []ent.Interceptor
 	}
 )

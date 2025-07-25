@@ -8,3 +8,6 @@ import (
 
 // StateMachine is the predicate function for statemachine builders.
 type StateMachine func(*sql.Selector)
+
+// StateTransition is the predicate function for statetransition builders.
+type StateTransition func(*sql.Selector)

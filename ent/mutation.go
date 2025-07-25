@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"go-fsm/ent/predicate"
 	"go-fsm/ent/statemachine"
+	"go-fsm/ent/statetransition"
 	"sync"
+	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
@@ -23,21 +25,25 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeStateMachine = "StateMachine"
+	TypeStateMachine    = "StateMachine"
+	TypeStateTransition = "StateTransition"
 )
 
 // StateMachineMutation represents an operation that mutates the StateMachine nodes in the graph.
 type StateMachineMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *int
-	machine_id    *string
-	current_state *string
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*StateMachine, error)
-	predicates    []predicate.StateMachine
+	op             Op
+	typ            string
+	id             *int
+	machine_id     *string
+	current_state  *string
+	clearedFields  map[string]struct{}
+	history        map[int]struct{}
+	removedhistory map[int]struct{}
+	clearedhistory bool
+	done           bool
+	oldValue       func(context.Context) (*StateMachine, error)
+	predicates     []predicate.StateMachine
 }
 
 var _ ent.Mutation = (*StateMachineMutation)(nil)
@@ -210,6 +216,60 @@ func (m *StateMachineMutation) ResetCurrentState() {
 	m.current_state = nil
 }
 
+// AddHistoryIDs adds the "history" edge to the StateTransition entity by ids.
+func (m *StateMachineMutation) AddHistoryIDs(ids ...int) {
+	if m.history == nil {
+		m.history = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.history[ids[i]] = struct{}{}
+	}
+}
+
+// ClearHistory clears the "history" edge to the StateTransition entity.
+func (m *StateMachineMutation) ClearHistory() {
+	m.clearedhistory = true
+}
+
+// HistoryCleared reports if the "history" edge to the StateTransition entity was cleared.
+func (m *StateMachineMutation) HistoryCleared() bool {
+	return m.clearedhistory
+}
+
+// RemoveHistoryIDs removes the "history" edge to the StateTransition entity by IDs.
+func (m *StateMachineMutation) RemoveHistoryIDs(ids ...int) {
+	if m.removedhistory == nil {
+		m.removedhistory = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.history, ids[i])
+		m.removedhistory[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedHistory returns the removed IDs of the "history" edge to the StateTransition entity.
+func (m *StateMachineMutation) RemovedHistoryIDs() (ids []int) {
+	for id := range m.removedhistory {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// HistoryIDs returns the "history" edge IDs in the mutation.
+func (m *StateMachineMutation) HistoryIDs() (ids []int) {
+	for id := range m.history {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetHistory resets all changes to the "history" edge.
+func (m *StateMachineMutation) ResetHistory() {
+	m.history = nil
+	m.clearedhistory = false
+	m.removedhistory = nil
+}
+
 // Where appends a list predicates to the StateMachineMutation builder.
 func (m *StateMachineMutation) Where(ps ...predicate.StateMachine) {
 	m.predicates = append(m.predicates, ps...)
@@ -360,48 +420,639 @@ func (m *StateMachineMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *StateMachineMutation) AddedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.history != nil {
+		edges = append(edges, statemachine.EdgeHistory)
+	}
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
 func (m *StateMachineMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case statemachine.EdgeHistory:
+		ids := make([]ent.Value, 0, len(m.history))
+		for id := range m.history {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *StateMachineMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.removedhistory != nil {
+		edges = append(edges, statemachine.EdgeHistory)
+	}
 	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
 func (m *StateMachineMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case statemachine.EdgeHistory:
+		ids := make([]ent.Value, 0, len(m.removedhistory))
+		for id := range m.removedhistory {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *StateMachineMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.clearedhistory {
+		edges = append(edges, statemachine.EdgeHistory)
+	}
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
 func (m *StateMachineMutation) EdgeCleared(name string) bool {
+	switch name {
+	case statemachine.EdgeHistory:
+		return m.clearedhistory
+	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
 func (m *StateMachineMutation) ClearEdge(name string) error {
+	switch name {
+	}
 	return fmt.Errorf("unknown StateMachine unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
 func (m *StateMachineMutation) ResetEdge(name string) error {
+	switch name {
+	case statemachine.EdgeHistory:
+		m.ResetHistory()
+		return nil
+	}
 	return fmt.Errorf("unknown StateMachine edge %s", name)
+}
+
+// StateTransitionMutation represents an operation that mutates the StateTransition nodes in the graph.
+type StateTransitionMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *int
+	from_state     *string
+	to_state       *string
+	event          *string
+	timestamp      *time.Time
+	clearedFields  map[string]struct{}
+	machine        *int
+	clearedmachine bool
+	done           bool
+	oldValue       func(context.Context) (*StateTransition, error)
+	predicates     []predicate.StateTransition
+}
+
+var _ ent.Mutation = (*StateTransitionMutation)(nil)
+
+// statetransitionOption allows management of the mutation configuration using functional options.
+type statetransitionOption func(*StateTransitionMutation)
+
+// newStateTransitionMutation creates new mutation for the StateTransition entity.
+func newStateTransitionMutation(c config, op Op, opts ...statetransitionOption) *StateTransitionMutation {
+	m := &StateTransitionMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeStateTransition,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withStateTransitionID sets the ID field of the mutation.
+func withStateTransitionID(id int) statetransitionOption {
+	return func(m *StateTransitionMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *StateTransition
+		)
+		m.oldValue = func(ctx context.Context) (*StateTransition, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().StateTransition.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withStateTransition sets the old StateTransition of the mutation.
+func withStateTransition(node *StateTransition) statetransitionOption {
+	return func(m *StateTransitionMutation) {
+		m.oldValue = func(context.Context) (*StateTransition, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m StateTransitionMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m StateTransitionMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *StateTransitionMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *StateTransitionMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().StateTransition.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetFromState sets the "from_state" field.
+func (m *StateTransitionMutation) SetFromState(s string) {
+	m.from_state = &s
+}
+
+// FromState returns the value of the "from_state" field in the mutation.
+func (m *StateTransitionMutation) FromState() (r string, exists bool) {
+	v := m.from_state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFromState returns the old "from_state" field's value of the StateTransition entity.
+// If the StateTransition object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StateTransitionMutation) OldFromState(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFromState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFromState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFromState: %w", err)
+	}
+	return oldValue.FromState, nil
+}
+
+// ResetFromState resets all changes to the "from_state" field.
+func (m *StateTransitionMutation) ResetFromState() {
+	m.from_state = nil
+}
+
+// SetToState sets the "to_state" field.
+func (m *StateTransitionMutation) SetToState(s string) {
+	m.to_state = &s
+}
+
+// ToState returns the value of the "to_state" field in the mutation.
+func (m *StateTransitionMutation) ToState() (r string, exists bool) {
+	v := m.to_state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldToState returns the old "to_state" field's value of the StateTransition entity.
+// If the StateTransition object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StateTransitionMutation) OldToState(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldToState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldToState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldToState: %w", err)
+	}
+	return oldValue.ToState, nil
+}
+
+// ResetToState resets all changes to the "to_state" field.
+func (m *StateTransitionMutation) ResetToState() {
+	m.to_state = nil
+}
+
+// SetEvent sets the "event" field.
+func (m *StateTransitionMutation) SetEvent(s string) {
+	m.event = &s
+}
+
+// Event returns the value of the "event" field in the mutation.
+func (m *StateTransitionMutation) Event() (r string, exists bool) {
+	v := m.event
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEvent returns the old "event" field's value of the StateTransition entity.
+// If the StateTransition object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StateTransitionMutation) OldEvent(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEvent is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEvent requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEvent: %w", err)
+	}
+	return oldValue.Event, nil
+}
+
+// ResetEvent resets all changes to the "event" field.
+func (m *StateTransitionMutation) ResetEvent() {
+	m.event = nil
+}
+
+// SetTimestamp sets the "timestamp" field.
+func (m *StateTransitionMutation) SetTimestamp(t time.Time) {
+	m.timestamp = &t
+}
+
+// Timestamp returns the value of the "timestamp" field in the mutation.
+func (m *StateTransitionMutation) Timestamp() (r time.Time, exists bool) {
+	v := m.timestamp
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTimestamp returns the old "timestamp" field's value of the StateTransition entity.
+// If the StateTransition object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StateTransitionMutation) OldTimestamp(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTimestamp is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTimestamp requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTimestamp: %w", err)
+	}
+	return oldValue.Timestamp, nil
+}
+
+// ResetTimestamp resets all changes to the "timestamp" field.
+func (m *StateTransitionMutation) ResetTimestamp() {
+	m.timestamp = nil
+}
+
+// SetMachineID sets the "machine" edge to the StateMachine entity by id.
+func (m *StateTransitionMutation) SetMachineID(id int) {
+	m.machine = &id
+}
+
+// ClearMachine clears the "machine" edge to the StateMachine entity.
+func (m *StateTransitionMutation) ClearMachine() {
+	m.clearedmachine = true
+}
+
+// MachineCleared reports if the "machine" edge to the StateMachine entity was cleared.
+func (m *StateTransitionMutation) MachineCleared() bool {
+	return m.clearedmachine
+}
+
+// MachineID returns the "machine" edge ID in the mutation.
+func (m *StateTransitionMutation) MachineID() (id int, exists bool) {
+	if m.machine != nil {
+		return *m.machine, true
+	}
+	return
+}
+
+// MachineIDs returns the "machine" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// MachineID instead. It exists only for internal usage by the builders.
+func (m *StateTransitionMutation) MachineIDs() (ids []int) {
+	if id := m.machine; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetMachine resets all changes to the "machine" edge.
+func (m *StateTransitionMutation) ResetMachine() {
+	m.machine = nil
+	m.clearedmachine = false
+}
+
+// Where appends a list predicates to the StateTransitionMutation builder.
+func (m *StateTransitionMutation) Where(ps ...predicate.StateTransition) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the StateTransitionMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *StateTransitionMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.StateTransition, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *StateTransitionMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *StateTransitionMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (StateTransition).
+func (m *StateTransitionMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *StateTransitionMutation) Fields() []string {
+	fields := make([]string, 0, 4)
+	if m.from_state != nil {
+		fields = append(fields, statetransition.FieldFromState)
+	}
+	if m.to_state != nil {
+		fields = append(fields, statetransition.FieldToState)
+	}
+	if m.event != nil {
+		fields = append(fields, statetransition.FieldEvent)
+	}
+	if m.timestamp != nil {
+		fields = append(fields, statetransition.FieldTimestamp)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *StateTransitionMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case statetransition.FieldFromState:
+		return m.FromState()
+	case statetransition.FieldToState:
+		return m.ToState()
+	case statetransition.FieldEvent:
+		return m.Event()
+	case statetransition.FieldTimestamp:
+		return m.Timestamp()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *StateTransitionMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case statetransition.FieldFromState:
+		return m.OldFromState(ctx)
+	case statetransition.FieldToState:
+		return m.OldToState(ctx)
+	case statetransition.FieldEvent:
+		return m.OldEvent(ctx)
+	case statetransition.FieldTimestamp:
+		return m.OldTimestamp(ctx)
+	}
+	return nil, fmt.Errorf("unknown StateTransition field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *StateTransitionMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case statetransition.FieldFromState:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFromState(v)
+		return nil
+	case statetransition.FieldToState:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetToState(v)
+		return nil
+	case statetransition.FieldEvent:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEvent(v)
+		return nil
+	case statetransition.FieldTimestamp:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTimestamp(v)
+		return nil
+	}
+	return fmt.Errorf("unknown StateTransition field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *StateTransitionMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *StateTransitionMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *StateTransitionMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown StateTransition numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *StateTransitionMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *StateTransitionMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *StateTransitionMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown StateTransition nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *StateTransitionMutation) ResetField(name string) error {
+	switch name {
+	case statetransition.FieldFromState:
+		m.ResetFromState()
+		return nil
+	case statetransition.FieldToState:
+		m.ResetToState()
+		return nil
+	case statetransition.FieldEvent:
+		m.ResetEvent()
+		return nil
+	case statetransition.FieldTimestamp:
+		m.ResetTimestamp()
+		return nil
+	}
+	return fmt.Errorf("unknown StateTransition field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *StateTransitionMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.machine != nil {
+		edges = append(edges, statetransition.EdgeMachine)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *StateTransitionMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case statetransition.EdgeMachine:
+		if id := m.machine; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *StateTransitionMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *StateTransitionMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *StateTransitionMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedmachine {
+		edges = append(edges, statetransition.EdgeMachine)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *StateTransitionMutation) EdgeCleared(name string) bool {
+	switch name {
+	case statetransition.EdgeMachine:
+		return m.clearedmachine
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *StateTransitionMutation) ClearEdge(name string) error {
+	switch name {
+	case statetransition.EdgeMachine:
+		m.ClearMachine()
+		return nil
+	}
+	return fmt.Errorf("unknown StateTransition unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *StateTransitionMutation) ResetEdge(name string) error {
+	switch name {
+	case statetransition.EdgeMachine:
+		m.ResetMachine()
+		return nil
+	}
+	return fmt.Errorf("unknown StateTransition edge %s", name)
 }

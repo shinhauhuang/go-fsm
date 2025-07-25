@@ -4,9 +4,11 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"go-fsm/ent/predicate"
 	"go-fsm/ent/statemachine"
+	"go-fsm/ent/statetransition"
 	"math"
 
 	"entgo.io/ent"
@@ -18,10 +20,11 @@ import (
 // StateMachineQuery is the builder for querying StateMachine entities.
 type StateMachineQuery struct {
 	config
-	ctx        *QueryContext
-	order      []statemachine.OrderOption
-	inters     []Interceptor
-	predicates []predicate.StateMachine
+	ctx         *QueryContext
+	order       []statemachine.OrderOption
+	inters      []Interceptor
+	predicates  []predicate.StateMachine
+	withHistory *StateTransitionQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -56,6 +59,28 @@ func (smq *StateMachineQuery) Unique(unique bool) *StateMachineQuery {
 func (smq *StateMachineQuery) Order(o ...statemachine.OrderOption) *StateMachineQuery {
 	smq.order = append(smq.order, o...)
 	return smq
+}
+
+// QueryHistory chains the current query on the "history" edge.
+func (smq *StateMachineQuery) QueryHistory() *StateTransitionQuery {
+	query := (&StateTransitionClient{config: smq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := smq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := smq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(statemachine.Table, statemachine.FieldID, selector),
+			sqlgraph.To(statetransition.Table, statetransition.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, statemachine.HistoryTable, statemachine.HistoryColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(smq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // First returns the first StateMachine entity from the query.
@@ -245,15 +270,27 @@ func (smq *StateMachineQuery) Clone() *StateMachineQuery {
 		return nil
 	}
 	return &StateMachineQuery{
-		config:     smq.config,
-		ctx:        smq.ctx.Clone(),
-		order:      append([]statemachine.OrderOption{}, smq.order...),
-		inters:     append([]Interceptor{}, smq.inters...),
-		predicates: append([]predicate.StateMachine{}, smq.predicates...),
+		config:      smq.config,
+		ctx:         smq.ctx.Clone(),
+		order:       append([]statemachine.OrderOption{}, smq.order...),
+		inters:      append([]Interceptor{}, smq.inters...),
+		predicates:  append([]predicate.StateMachine{}, smq.predicates...),
+		withHistory: smq.withHistory.Clone(),
 		// clone intermediate query.
 		sql:  smq.sql.Clone(),
 		path: smq.path,
 	}
+}
+
+// WithHistory tells the query-builder to eager-load the nodes that are connected to
+// the "history" edge. The optional arguments are used to configure the query builder of the edge.
+func (smq *StateMachineQuery) WithHistory(opts ...func(*StateTransitionQuery)) *StateMachineQuery {
+	query := (&StateTransitionClient{config: smq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	smq.withHistory = query
+	return smq
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -332,8 +369,11 @@ func (smq *StateMachineQuery) prepareQuery(ctx context.Context) error {
 
 func (smq *StateMachineQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*StateMachine, error) {
 	var (
-		nodes = []*StateMachine{}
-		_spec = smq.querySpec()
+		nodes       = []*StateMachine{}
+		_spec       = smq.querySpec()
+		loadedTypes = [1]bool{
+			smq.withHistory != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*StateMachine).scanValues(nil, columns)
@@ -341,6 +381,7 @@ func (smq *StateMachineQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	_spec.Assign = func(columns []string, values []any) error {
 		node := &StateMachine{config: smq.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	for i := range hooks {
@@ -352,7 +393,46 @@ func (smq *StateMachineQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := smq.withHistory; query != nil {
+		if err := smq.loadHistory(ctx, query, nodes,
+			func(n *StateMachine) { n.Edges.History = []*StateTransition{} },
+			func(n *StateMachine, e *StateTransition) { n.Edges.History = append(n.Edges.History, e) }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (smq *StateMachineQuery) loadHistory(ctx context.Context, query *StateTransitionQuery, nodes []*StateMachine, init func(*StateMachine), assign func(*StateMachine, *StateTransition)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*StateMachine)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.StateTransition(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(statemachine.HistoryColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.state_machine_history
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "state_machine_history" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "state_machine_history" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
 }
 
 func (smq *StateMachineQuery) sqlCount(ctx context.Context) (int, error) {

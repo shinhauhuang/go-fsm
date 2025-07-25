@@ -20,7 +20,28 @@ type StateMachine struct {
 	MachineID string `json:"machine_id,omitempty"`
 	// CurrentState holds the value of the "current_state" field.
 	CurrentState string `json:"current_state,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the StateMachineQuery when eager-loading is set.
+	Edges        StateMachineEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// StateMachineEdges holds the relations/edges for other nodes in the graph.
+type StateMachineEdges struct {
+	// History holds the value of the history edge.
+	History []*StateTransition `json:"history,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// HistoryOrErr returns the History value or an error if the edge
+// was not loaded in eager-loading.
+func (e StateMachineEdges) HistoryOrErr() ([]*StateTransition, error) {
+	if e.loadedTypes[0] {
+		return e.History, nil
+	}
+	return nil, &NotLoadedError{edge: "history"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -76,6 +97,11 @@ func (sm *StateMachine) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (sm *StateMachine) Value(name string) (ent.Value, error) {
 	return sm.selectValues.Get(name)
+}
+
+// QueryHistory queries the "history" edge of the StateMachine entity.
+func (sm *StateMachine) QueryHistory() *StateTransitionQuery {
+	return NewStateMachineClient(sm.config).QueryHistory(sm)
 }
 
 // Update returns a builder for updating this StateMachine.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go-fsm/ent/statemachine"
+	"go-fsm/ent/statetransition"
 	"reflect"
 	"sync"
 
@@ -73,7 +74,8 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			statemachine.Table: statemachine.ValidColumn,
+			statemachine.Table:    statemachine.ValidColumn,
+			statetransition.Table: statetransition.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

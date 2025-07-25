@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go-fsm/ent/statemachine"
+	"go-fsm/ent/statetransition"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
@@ -29,6 +30,21 @@ func (smc *StateMachineCreate) SetMachineID(s string) *StateMachineCreate {
 func (smc *StateMachineCreate) SetCurrentState(s string) *StateMachineCreate {
 	smc.mutation.SetCurrentState(s)
 	return smc
+}
+
+// AddHistoryIDs adds the "history" edge to the StateTransition entity by IDs.
+func (smc *StateMachineCreate) AddHistoryIDs(ids ...int) *StateMachineCreate {
+	smc.mutation.AddHistoryIDs(ids...)
+	return smc
+}
+
+// AddHistory adds the "history" edges to the StateTransition entity.
+func (smc *StateMachineCreate) AddHistory(s ...*StateTransition) *StateMachineCreate {
+	ids := make([]int, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return smc.AddHistoryIDs(ids...)
 }
 
 // Mutation returns the StateMachineMutation object of the builder.
@@ -114,6 +130,22 @@ func (smc *StateMachineCreate) createSpec() (*StateMachine, *sqlgraph.CreateSpec
 	if value, ok := smc.mutation.CurrentState(); ok {
 		_spec.SetField(statemachine.FieldCurrentState, field.TypeString, value)
 		_node.CurrentState = value
+	}
+	if nodes := smc.mutation.HistoryIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   statemachine.HistoryTable,
+			Columns: []string{statemachine.HistoryColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(statetransition.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }
