@@ -10,6 +10,7 @@ import (
 	"os"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -26,10 +27,15 @@ const (
 )
 
 func main() {
+	// Load .env file
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("No .env file found, using system environment variables")
+	}
+
 	// --- Database Configuration ---
 	dbDriver := os.Getenv("DB_DRIVER")
 	var client *ent.Client
-	var err error
 
 	switch dbDriver {
 	case "mariadb":

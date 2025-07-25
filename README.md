@@ -12,7 +12,13 @@ A simple and flexible Finite State Machine (FSM) library for Go.
 
 ## Database Configuration
 
-This project uses `ent` for persistence and supports both **SQLite** and **MariaDB**. The database driver can be configured using environment variables.
+This project uses `ent` for persistence and supports both **SQLite** and **MariaDB**. The database driver can be configured using a `.env` file or by setting environment variables directly.
+
+A `.env.example` file is provided. To use it, copy it to `.env` and fill in your details:
+
+```sh
+cp .env.example .env
+```
 
 -   `DB_DRIVER`: Set to `mariadb` to use MariaDB. If unset or set to any other value, it will default to an in-memory SQLite database.
 -   `DB_DSN`: When using `mariadb`, this **must** be set to your MariaDB Data Source Name (DSN). The application will exit if it's not set.

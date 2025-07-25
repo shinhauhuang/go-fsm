@@ -5,6 +5,7 @@ go 1.23.4
 require (
 	entgo.io/ent v0.14.4
 	github.com/go-sql-driver/mysql v1.9.3
+	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.16
 )
 
