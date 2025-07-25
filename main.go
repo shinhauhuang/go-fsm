@@ -76,11 +76,11 @@ func main() {
 	}
 
 	// 5. Configure actions, guards, and callbacks
-	turnstile.OnEntry(Unlocked, func(args ...interface{}) error {
+	turnstile.OnEntry(Unlocked, func(ctx context.Context, args ...interface{}) error {
 		fmt.Println("  [OnEntry] Unlocked: Please pass through.")
 		return nil
 	})
-	turnstile.AddGuard(Locked, Coin, func(args ...interface{}) bool {
+	turnstile.AddGuard(Locked, Coin, func(ctx context.Context, args ...interface{}) bool {
 		fmt.Println("  [Guard] Checking if coin is valid... (approved)")
 		return true
 	})

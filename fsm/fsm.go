@@ -4,9 +4,19 @@ import (
 	"context" // Import context for database operations
 	"errors"
 	"fmt"
+	"sync" // Import the sync package for mutex
 
 	"go-fsm/ent"              // Import the generated Ent client
 	"go-fsm/ent/statemachine" // Import statemachine query
+)
+
+var (
+	// ErrTransitionDenied is returned when a guard function denies a transition.
+	ErrTransitionDenied = errors.New("transition denied by guard")
+	// ErrInvalidTransition is returned for an invalid transition.
+	ErrInvalidTransition = errors.New("invalid transition")
+	// ErrInvalidEvent is returned for an invalid event.
+	ErrInvalidEvent = errors.New("invalid event")
 )
 
 // State represents a state in the FSM.
@@ -16,10 +26,12 @@ type State string
 type Event string
 
 // Action is a function that can be executed when entering or exiting a state.
-type Action func(args ...interface{}) error
+// It receives a context, allowing for operations like database queries.
+type Action func(ctx context.Context, args ...interface{}) error
 
 // Guard is a function that determines if a transition is allowed.
-type Guard func(args ...interface{}) bool
+// It receives a context, allowing for operations like database queries.
+type Guard func(ctx context.Context, args ...interface{}) bool
 
 // Transition defines a state transition: current state, event, and next state.
 type Transition struct {
@@ -30,8 +42,9 @@ type Transition struct {
 
 // FSM represents a Finite State Machine.
 type FSM struct {
-	client              *ent.Client // Ent client for persistence
-	machineID           string      // Unique ID for this FSM instance
+	mu                  sync.RWMutex // Mutex to ensure thread safety
+	client              *ent.Client  // Ent client for persistence
+	machineID           string       // Unique ID for this FSM instance
 	currentState        State
 	transitions         map[State]map[Event]State
 	entryActions        map[State]Action
@@ -87,33 +100,38 @@ func NewFSM(ctx context.Context, client *ent.Client, machineID string, initialSt
 
 // CurrentState returns the current state of the FSM.
 func (f *FSM) CurrentState() State {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return f.currentState
 }
 
 // Transition attempts to transition the FSM to a new state based on an event.
 func (f *FSM) Transition(ctx context.Context, event Event, args ...interface{}) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	nextStates, ok := f.transitions[f.currentState]
 	if !ok {
-		return fmt.Errorf("no transitions defined from state %s", f.currentState)
+		return fmt.Errorf("%w: no transitions defined from state %s", ErrInvalidTransition, f.currentState)
 	}
 
 	nextState, ok := nextStates[event]
 	if !ok {
-		return fmt.Errorf("no transition defined for event %s from state %s", event, f.currentState)
+		return fmt.Errorf("%w: no transition defined for event %s from state %s", ErrInvalidEvent, event, f.currentState)
 	}
 
 	// Check guard if registered
 	if guardsForState, ok := f.guards[f.currentState]; ok {
 		if guard, ok := guardsForState[event]; ok {
-			if !guard(args...) {
-				return errors.New("transition denied by guard")
+			if !guard(ctx, args...) {
+				return ErrTransitionDenied
 			}
 		}
 	}
 
 	// Execute exit action of the current state
 	if exitAction, ok := f.exitActions[f.currentState]; ok {
-		if err := exitAction(args...); err != nil {
+		if err := exitAction(ctx, args...); err != nil {
 			return fmt.Errorf("exit action failed for state %s: %w", f.currentState, err)
 		}
 	}
@@ -121,7 +139,7 @@ func (f *FSM) Transition(ctx context.Context, event Event, args ...interface{}) 
 	// Execute transition callback if registered
 	if callbacksForState, ok := f.transitionCallbacks[f.currentState]; ok {
 		if callback, ok := callbacksForState[event]; ok {
-			if err := callback(args...); err != nil {
+			if err := callback(ctx, args...); err != nil {
 				return fmt.Errorf("transition callback failed for event %s from state %s: %w", event, f.currentState, err)
 			}
 		}
@@ -132,7 +150,9 @@ func (f *FSM) Transition(ctx context.Context, event Event, args ...interface{}) 
 
 	// Execute entry action of the new state
 	if entryAction, ok := f.entryActions[f.currentState]; ok {
-		if err := entryAction(args...); err != nil {
+		if err := entryAction(ctx, args...); err != nil {
+			// Revert state if entry action fails
+			f.currentState = previousState
 			return fmt.Errorf("entry action failed for state %s: %w", f.currentState, err)
 		}
 	}
@@ -189,11 +209,14 @@ func (f *FSM) Transition(ctx context.Context, event Event, args ...interface{}) 
 
 // OnTransition registers a callback function to be executed when a specific transition occurs.
 func (f *FSM) OnTransition(from State, event Event, callback Action) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if _, ok := f.transitions[from]; !ok {
-		return errors.New("no transitions defined from this state")
+		return fmt.Errorf("%w: no transitions defined from state %s", ErrInvalidTransition, from)
 	}
 	if _, ok := f.transitions[from][event]; !ok {
-		return errors.New("no transition defined for this event from this state")
+		return fmt.Errorf("%w: no transition defined for event %s from state %s", ErrInvalidEvent, event, from)
 	}
 
 	if _, ok := f.transitionCallbacks[from]; !ok {
@@ -205,21 +228,28 @@ func (f *FSM) OnTransition(from State, event Event, callback Action) error {
 
 // OnEntry registers an action to be executed when entering a state.
 func (f *FSM) OnEntry(state State, action Action) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.entryActions[state] = action
 }
 
 // OnExit registers an action to be executed when exiting a state.
 func (f *FSM) OnExit(state State, action Action) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.exitActions[state] = action
 }
 
 // AddGuard registers a guard function for a specific transition.
 func (f *FSM) AddGuard(from State, event Event, guard Guard) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if _, ok := f.transitions[from]; !ok {
-		return errors.New("no transitions defined from this state")
+		return fmt.Errorf("%w: no transitions defined from state %s", ErrInvalidTransition, from)
 	}
 	if _, ok := f.transitions[from][event]; !ok {
-		return errors.New("no transition defined for this event from this state")
+		return fmt.Errorf("%w: no transition defined for event %s from state %s", ErrInvalidEvent, event, from)
 	}
 
 	if _, ok := f.guards[from]; !ok {
