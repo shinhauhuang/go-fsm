@@ -24,20 +24,53 @@ cp .env.example .env
 -   `DB_DSN`: When using `mariadb`, this **must** be set to your MariaDB Data Source Name (DSN). The application will exit if it's not set.
     -   Format: `user:password@tcp(host:port)/dbname?parseTime=true`
 
-### Example
+### Using Docker for Local Development
 
-To run with MariaDB:
+This project includes a `docker-compose.yml` file to easily spin up a local MariaDB and Adminer (a database management tool) instance.
+
+**1. Set up your environment:**
+
+Copy the example environment file and edit it if necessary. The defaults are configured to work with the `docker-compose.yml` file out of the box.
 
 ```sh
-export DB_DRIVER=mariadb
-export DB_DSN="myuser:mypass@tcp(localhost:3306)/my_fsm_db?parseTime=true"
+cp .env.example .env
+```
+
+**2. Start the services:**
+
+```sh
+docker-compose up -d
+```
+
+**3. Initialize the database schema:**
+
+After the database container is running, run the initialization script. This only needs to be done once.
+
+```sh
+go run db/init.go
+```
+
+**4. Run the application:**
+
+The Go application will now connect to the initialized MariaDB instance running in Docker.
+
+```sh
 go run main.go
 ```
 
-To run with the default in-memory SQLite:
+**4. Access Adminer:**
+
+You can manage the database by visiting `http://localhost:8080` in your browser.
+-   **System**: `MariaDB`
+-   **Server**: `db` (the service name from `docker-compose.yml`)
+-   **Username**: `fsm_user` (from your `.env` file)
+-   **Password**: `fsm_pass` (from your `.env` file)
+-   **Database**: `fsm_db` (from your `.env` file)
+
+**5. Stop the services:**
 
 ```sh
-go run main.go
+docker-compose down
 ```
 
 ## How to Use
