@@ -17,70 +17,69 @@ const (
 	Push fsm.Event = "PUSH"
 )
 
-// Example Action functions
-func onUnlock() {
-	fmt.Println("Action: Turnstile unlocked! Please enter.")
-}
-
-func onLock() {
-	fmt.Println("Action: Turnstile locked. Insert coin.")
-}
-
-// Example Guard functions
-func canPush() bool {
-	fmt.Println("Guard: Checking if push is allowed...")
-	// In a real scenario, this might check if a person is actually pushing
-	return true
-}
-
-func canCoin() bool {
-	fmt.Println("Guard: Checking if coin is valid...")
-	// In a real scenario, this might validate the coin
-	return true
-}
-
 func main() {
-	// Define turnstile transitions with actions and guards
-	transitions := map[fsm.State]map[fsm.Event]fsm.Transition{
-		Locked: {
-			Coin: {
-				NextState: Unlocked,
-				Guard:     canCoin,
-				Action:    onUnlock,
-			},
-		},
-		Unlocked: {
-			Push: {
-				NextState: Locked,
-				Guard:     canPush,
-				Action:    onLock,
-			},
-		},
+	fmt.Println("--- FSM with OnEntry/OnExit, Guards, and Callbacks ---")
+
+	// 1. Define all transitions
+	transitions := []fsm.Transition{
+		{From: Locked, Event: Coin, To: Unlocked},
+		{From: Unlocked, Event: Push, To: Locked},
 	}
 
-	// Create a new turnstile state machine
-	turnstile := fsm.NewStateMachine(Locked, transitions)
+	// 2. Create a new FSM instance
+	turnstile, err := fsm.NewFSM("turnstile-01", Locked, transitions)
+	if err != nil {
+		fmt.Printf("Failed to create FSM: %v\n", err)
+		return
+	}
 
-	fmt.Printf("Initial state: %s\n", turnstile.CurrentState)
+	// 3. Configure actions, guards, and callbacks
+	turnstile.OnEntry(Unlocked, func(args ...interface{}) error {
+		fmt.Println("  [OnEntry] Unlocked: Please pass through.")
+		return nil
+	})
+	turnstile.OnExit(Locked, func(args ...interface{}) error {
+		fmt.Println("  [OnExit] Locked: Processing payment...")
+		return nil
+	})
+	turnstile.AddGuard(Locked, Coin, func(args ...interface{}) bool {
+		fmt.Println("  [Guard] Checking if coin is valid... (approved)")
+		return true
+	})
+	turnstile.OnTransition(Locked, Coin, func(args ...interface{}) error {
+		fmt.Println("  [OnTransition] Coin transition is happening.")
+		return nil
+	})
 
-	// Simulate events
-	fmt.Println("\n--- Simulating PUSH event (should not change state from LOCKED) ---")
-	newState, transitioned := turnstile.SendEvent(Push)
-	fmt.Printf("Current state: %s, Transitioned: %t\n", newState, transitioned)
+	fmt.Printf("Initial state: %s\n", turnstile.CurrentState())
 
-	fmt.Println("\n--- Simulating COIN event (should unlock) ---")
-	newState, transitioned = turnstile.SendEvent(Coin)
-	fmt.Printf("Current state: %s, Transitioned: %t\n", newState, transitioned)
+	// --- Simulate Events ---
 
-	fmt.Println("\n--- Simulating COIN event (should not change state from UNLOCKED) ---")
-	newState, transitioned = turnstile.SendEvent(Coin)
-	fmt.Printf("Current state: %s, Transitioned: %t\n", newState, transitioned)
+	fmt.Println("\n1. Sending PUSH event (should fail, no transition)")
+	err = turnstile.Transition(Push)
+	if err != nil {
+		fmt.Printf("  Error: %v\n", err)
+	}
+	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
 
-	fmt.Println("\n--- Simulating PUSH event (should lock) ---")
-	newState, transitioned = turnstile.SendEvent(Push)
-	fmt.Printf("Current state: %s, Transitioned: %t\n", newState, transitioned)
+	fmt.Println("\n2. Sending COIN event (should succeed and unlock)")
+	err = turnstile.Transition(Coin)
+	if err != nil {
+		fmt.Printf("  Error: %v\n", err)
+	}
+	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
 
-	fmt.Println("\n--- Simulating PUSH event (should not change state from LOCKED) ---")
-	newState, transitioned = turnstile.SendEvent(Push)
-	fmt.Printf("Current state: %s, Transitioned: %t\n", newState, transitioned)
+	fmt.Println("\n3. Sending COIN event again (should fail, no transition)")
+	err = turnstile.Transition(Coin)
+	if err != nil {
+		fmt.Printf("  Error: %v\n", err)
+	}
+	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
+
+	fmt.Println("\n4. Sending PUSH event (should succeed and lock)")
+	err = turnstile.Transition(Push)
+	if err != nil {
+		fmt.Printf("  Error: %v\n", err)
+	}
+	fmt.Printf("  Current state: %s\n", turnstile.CurrentState())
 }
