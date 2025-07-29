@@ -1,4 +1,4 @@
-module go-fsm
+module github.com/shinhauhuang/go-fsm
 
 go 1.23.4
 
