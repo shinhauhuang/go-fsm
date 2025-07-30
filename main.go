@@ -81,10 +81,12 @@ func main() {
 		fmt.Println("  [OnEntry] Unlocked: Please pass through.")
 		return nil
 	})
-	turnstile.AddGuard(Locked, Coin, func(ctx context.Context, args ...interface{}) bool {
+	if err := turnstile.AddGuard(Locked, Coin, func(ctx context.Context, args ...interface{}) bool {
 		fmt.Println("  [Guard] Checking if coin is valid... (approved)")
 		return true
-	})
+	}); err != nil {
+		log.Fatalf("Failed to add guard: %v", err)
+	}
 
 	fmt.Printf("Initial state (from DB or initial): %s\n", turnstile.CurrentState())
 
