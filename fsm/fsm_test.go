@@ -113,6 +113,21 @@ func TestNewFSM(t *testing.T) {
 			t.Errorf("Expected loaded state %s, got %s", StateRunning, f.CurrentState())
 		}
 	})
+
+	t.Run("New FSM with duplicate transitions", func(t *testing.T) {
+		duplicateTransitions := []Transition{
+			{From: StateIdle, Event: EventStart, To: StateRunning},
+			{From: StateIdle, Event: EventStart, To: StatePaused}, // Duplicate
+		}
+		_, err := NewFSM(ctx, nil, "", StateIdle, duplicateTransitions)
+		if err == nil {
+			t.Fatalf("Expected error for duplicate transition, got nil")
+		}
+		expectedErrorMsg := fmt.Sprintf("duplicate transition defined from state %s for event %s", StateIdle, EventStart)
+		if err.Error() != expectedErrorMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedErrorMsg, err.Error())
+		}
+	})
 }
 
 func TestCurrentState(t *testing.T) {
