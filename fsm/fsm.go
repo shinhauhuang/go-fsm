@@ -71,6 +71,9 @@ func NewFSM(ctx context.Context, client *ent.Client, machineID string, initialSt
 		if _, ok := fsm.transitions[t.From]; !ok {
 			fsm.transitions[t.From] = make(map[Event]State)
 		}
+		if _, ok := fsm.transitions[t.From][t.Event]; ok {
+			return nil, fmt.Errorf("duplicate transition defined from state %s for event %s", t.From, t.Event)
+		}
 		fsm.transitions[t.From][t.Event] = t.To
 	}
 
@@ -159,52 +162,57 @@ func (f *FSM) Transition(ctx context.Context, event Event, args ...interface{}) 
 
 	// Persist the new state and the transition history to the database
 	if f.client != nil && f.machineID != "" {
-		// Use a transaction to ensure atomicity
-		tx, err := f.client.Tx(ctx)
-		if err != nil {
+		if err := f.persistStateAndHistory(ctx, previousState, nextState, event); err != nil {
 			f.currentState = previousState // Revert state
-			return fmt.Errorf("failed to start transaction: %w", err)
-		}
-
-		// Get the StateMachine node
-		sm, err := tx.StateMachine.Query().Where(statemachine.MachineID(f.machineID)).Only(ctx)
-		if err != nil {
-			f.currentState = previousState // Revert state
-			return fmt.Errorf("failed to query state machine for update: %w", err)
-		}
-
-		// Create the history record
-		_, err = tx.StateTransition.Create().
-			SetFromState(string(previousState)).
-			SetToState(string(nextState)).
-			SetEvent(string(event)).
-			SetMachine(sm).
-			Save(ctx)
-		if err != nil {
-			f.currentState = previousState // Revert state
-			if rerr := tx.Rollback(); rerr != nil {
-				return fmt.Errorf("failed to rollback transaction: %v, original error: %w", rerr, err)
-			}
-			return fmt.Errorf("failed to create transition history: %w", err)
-		}
-
-		// Update the current state of the machine
-		_, err = sm.Update().SetCurrentState(string(f.currentState)).Save(ctx)
-		if err != nil {
-			f.currentState = previousState // Revert state
-			if rerr := tx.Rollback(); rerr != nil {
-				return fmt.Errorf("failed to rollback transaction: %v, original error: %w", rerr, err)
-			}
-			return fmt.Errorf("failed to persist state: %w", err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			f.currentState = previousState // Revert state
-			return fmt.Errorf("failed to commit transaction: %w", err)
+			return fmt.Errorf("failed to persist state and history: %w", err)
 		}
 	}
 
 	return nil
+}
+
+// persistStateAndHistory persists the new state and the transition history to the database.
+func (f *FSM) persistStateAndHistory(ctx context.Context, previousState, nextState State, event Event) error {
+	tx, err := f.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+
+	// Defer a rollback function that will be called if the transaction fails.
+	// If commit is successful, this deferred function will do nothing.
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r) // Re-throw panic after rollback
+		} else if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Get the StateMachine node
+	sm, err := tx.StateMachine.Query().Where(statemachine.MachineID(f.machineID)).Only(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to query state machine for update: %w", err)
+	}
+
+	// Create the history record
+	_, err = tx.StateTransition.Create().
+		SetFromState(string(previousState)).
+		SetToState(string(nextState)).
+		SetEvent(string(event)).
+		SetMachine(sm).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create transition history: %w", err)
+	}
+
+	// Update the current state of the machine
+	_, err = sm.Update().SetCurrentState(string(f.currentState)).Save(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to persist state: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // OnTransition registers a callback function to be executed when a specific transition occurs.
