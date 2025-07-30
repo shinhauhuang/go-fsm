@@ -5,7 +5,8 @@ package hook
 import (
 	"context"
 	"fmt"
-	"go-fsm/ent"
+
+	"github.com/shinhauhuang/go-fsm/ent"
 )
 
 // The StateMachineFunc type is an adapter to allow the use of ordinary

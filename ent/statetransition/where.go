@@ -3,8 +3,9 @@
 package statetransition
 
 import (
-	"go-fsm/ent/predicate"
 	"time"
+
+	"github.com/shinhauhuang/go-fsm/ent/predicate"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"

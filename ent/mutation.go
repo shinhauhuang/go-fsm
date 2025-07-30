@@ -6,11 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go-fsm/ent/predicate"
-	"go-fsm/ent/statemachine"
-	"go-fsm/ent/statetransition"
 	"sync"
 	"time"
+
+	"github.com/shinhauhuang/go-fsm/ent/predicate"
+	"github.com/shinhauhuang/go-fsm/ent/statemachine"
+	"github.com/shinhauhuang/go-fsm/ent/statetransition"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"

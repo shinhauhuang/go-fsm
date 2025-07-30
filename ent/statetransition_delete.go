@@ -4,8 +4,9 @@ package ent
 
 import (
 	"context"
-	"go-fsm/ent/predicate"
-	"go-fsm/ent/statetransition"
+
+	"github.com/shinhauhuang/go-fsm/ent/predicate"
+	"github.com/shinhauhuang/go-fsm/ent/statetransition"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"

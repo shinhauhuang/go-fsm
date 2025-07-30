@@ -7,10 +7,10 @@ import (
 	"sync"
 	"testing"
 
-	"go-fsm/ent"
-	"go-fsm/ent/enttest"
-	"go-fsm/ent/statemachine"
-	"go-fsm/ent/statetransition"
+	"github.com/shinhauhuang/go-fsm/ent"
+	"github.com/shinhauhuang/go-fsm/ent/enttest"
+	"github.com/shinhauhuang/go-fsm/ent/statemachine"
+	"github.com/shinhauhuang/go-fsm/ent/statetransition"
 
 	_ "github.com/mattn/go-sqlite3" // Driver for SQLite
 )

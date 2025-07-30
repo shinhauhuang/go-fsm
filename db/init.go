@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"go-fsm/ent"
 	"log"
 	"os"
+
+	"github.com/shinhauhuang/go-fsm/ent"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"

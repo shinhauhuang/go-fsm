@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"go-fsm/ent"
-	"go-fsm/ent/statemachine"
-	"go-fsm/fsm"
 	"log"
 	"os"
+
+	"github.com/shinhauhuang/go-fsm/ent"
+	"github.com/shinhauhuang/go-fsm/ent/statemachine"
+	"github.com/shinhauhuang/go-fsm/fsm"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"

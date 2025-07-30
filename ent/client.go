@@ -9,10 +9,10 @@ import (
 	"log"
 	"reflect"
 
-	"go-fsm/ent/migrate"
+	"github.com/shinhauhuang/go-fsm/ent/migrate"
 
-	"go-fsm/ent/statemachine"
-	"go-fsm/ent/statetransition"
+	"github.com/shinhauhuang/go-fsm/ent/statemachine"
+	"github.com/shinhauhuang/go-fsm/ent/statetransition"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"

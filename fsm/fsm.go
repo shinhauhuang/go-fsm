@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync" // Import the sync package for mutex
 
-	"go-fsm/ent"              // Import the generated Ent client
-	"go-fsm/ent/statemachine" // Import statemachine query
+	"github.com/shinhauhuang/go-fsm/ent"              // Import the generated Ent client
+	"github.com/shinhauhuang/go-fsm/ent/statemachine" // Import statemachine query
 )
 
 var (

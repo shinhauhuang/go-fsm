@@ -4,8 +4,9 @@ package ent
 
 import (
 	"fmt"
-	"go-fsm/ent/statemachine"
 	"strings"
+
+	"github.com/shinhauhuang/go-fsm/ent/statemachine"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"

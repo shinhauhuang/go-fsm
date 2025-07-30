@@ -5,11 +5,11 @@ package enttest
 import (
 	"context"
 
-	"go-fsm/ent"
+	"github.com/shinhauhuang/go-fsm/ent"
 	// required by schema hooks.
-	_ "go-fsm/ent/runtime"
+	_ "github.com/shinhauhuang/go-fsm/ent/runtime"
 
-	"go-fsm/ent/migrate"
+	"github.com/shinhauhuang/go-fsm/ent/migrate"
 
 	"entgo.io/ent/dialect/sql/schema"
 )

@@ -3,10 +3,11 @@
 package ent
 
 import (
-	"go-fsm/ent/schema"
-	"go-fsm/ent/statemachine"
-	"go-fsm/ent/statetransition"
 	"time"
+
+	"github.com/shinhauhuang/go-fsm/ent/schema"
+	"github.com/shinhauhuang/go-fsm/ent/statemachine"
+	"github.com/shinhauhuang/go-fsm/ent/statetransition"
 )
 
 // The init function reads all schema descriptors with runtime code

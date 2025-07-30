@@ -3,7 +3,7 @@
 package statemachine
 
 import (
-	"go-fsm/ent/predicate"
+	"github.com/shinhauhuang/go-fsm/ent/predicate"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
