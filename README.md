@@ -86,12 +86,44 @@ transitions := []fsm.Transition{
 }
 ```
 
-### 2. Create an FSM Instance
+### 2. Create or Load an FSM Instance
 
-Use `fsm.NewFSM` to create a new state machine instance.
+You can create a new FSM or load an existing one from the database.
+
+#### Creating a New FSM (`fsm.NewFSM`)
+
+Use `fsm.NewFSM` to create a new state machine instance. If a `machineID` is provided and a machine with that ID already exists in the database, its state will be loaded. Otherwise, a new machine will be created with the `initialState`.
 
 ```go
-machine, err := fsm.NewFSM("machine-id", initialState, transitions)
+import (
+    "context"
+    "github.com/shinhauhuang/go-fsm/ent" // Assuming you have an Ent client
+)
+
+// client is your Ent database client
+// ctx is your context.Context
+machine, err := fsm.NewFSM(ctx, client, "your-unique-machine-id", initialState, transitions)
+if err != nil {
+    // Handle error
+}
+```
+
+#### Loading an Existing FSM (`fsm.LoadFSM`)
+
+Use `fsm.LoadFSM` to explicitly load an existing state machine from the database using its `machineID`. This function will return an error if the machine does not exist.
+
+```go
+import (
+    "context"
+    "github.com/shinhauhuang/go-fsm/ent" // Assuming you have an Ent client
+)
+
+// client is your Ent database client
+// ctx is your context.Context
+existingMachine, err := fsm.LoadFSM(ctx, client, "your-unique-machine-id", transitions)
+if err != nil {
+    // Handle error (e.g., machine not found)
+}
 ```
 
 ### 3. Configure Callbacks and Guards

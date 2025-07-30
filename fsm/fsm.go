@@ -67,14 +67,8 @@ func NewFSM(ctx context.Context, client *ent.Client, machineID string, initialSt
 		transitionCallbacks: make(map[State]map[Event]Action),
 	}
 
-	for _, t := range transitions {
-		if _, ok := fsm.transitions[t.From]; !ok {
-			fsm.transitions[t.From] = make(map[Event]State)
-		}
-		if _, ok := fsm.transitions[t.From][t.Event]; ok {
-			return nil, fmt.Errorf("duplicate transition defined from state %s for event %s", t.From, t.Event)
-		}
-		fsm.transitions[t.From][t.Event] = t.To
+	if err := initFSMTransitions(fsm, transitions); err != nil {
+		return nil, err
 	}
 
 	// Try to load the state from the database if machineID is provided
@@ -96,6 +90,50 @@ func NewFSM(ctx context.Context, client *ent.Client, machineID string, initialSt
 		} else {
 			fsm.currentState = State(sm.CurrentState)
 		}
+	}
+
+	return fsm, nil
+}
+
+// initFSMTransitions initializes the FSM's transitions map and performs duplicate transition checks.
+func initFSMTransitions(fsm *FSM, transitions []Transition) error {
+	for _, t := range transitions {
+		if _, ok := fsm.transitions[t.From]; !ok {
+			fsm.transitions[t.From] = make(map[Event]State)
+		}
+		if _, ok := fsm.transitions[t.From][t.Event]; ok {
+			return fmt.Errorf("duplicate transition defined from state %s for event %s", t.From, t.Event)
+		}
+		fsm.transitions[t.From][t.Event] = t.To
+	}
+	return nil
+}
+
+// LoadFSM loads an existing FSM from the database.
+// It requires the machineID and the set of transitions that define the FSM's behavior.
+func LoadFSM(ctx context.Context, client *ent.Client, machineID string, transitions []Transition) (*FSM, error) {
+	if client == nil || machineID == "" {
+		return nil, errors.New("client and machineID are required to load an FSM")
+	}
+
+	sm, err := client.StateMachine.Query().Where(statemachine.MachineID(machineID)).Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query state machine with ID %s: %w", machineID, err)
+	}
+
+	fsm := &FSM{
+		client:              client,
+		machineID:           machineID,
+		currentState:        State(sm.CurrentState), // Load current state from DB
+		transitions:         make(map[State]map[Event]State),
+		entryActions:        make(map[State]Action),
+		exitActions:         make(map[State]Action),
+		guards:              make(map[State]map[Event]Guard),
+		transitionCallbacks: make(map[State]map[Event]Action),
+	}
+
+	if err := initFSMTransitions(fsm, transitions); err != nil {
+		return nil, fmt.Errorf("%w during FSM loading", err)
 	}
 
 	return fsm, nil

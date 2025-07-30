@@ -130,6 +130,92 @@ func TestNewFSM(t *testing.T) {
 	})
 }
 
+func TestLoadFSM(t *testing.T) {
+	ctx := context.Background()
+	transitions := defineTestTransitions()
+	client := setupTestClient(t)
+	defer client.Close()
+
+	t.Run("Load existing FSM successfully", func(t *testing.T) {
+		machineID := "load_test_machine_1"
+		// Pre-create a state machine in the DB
+		_, err := client.StateMachine.Create().
+			SetMachineID(machineID).
+			SetCurrentState(string(StatePaused)).
+			Save(ctx)
+		if err != nil {
+			t.Fatalf("Failed to pre-create state machine: %v", err)
+		}
+
+		f, err := LoadFSM(ctx, client, machineID, transitions)
+		if err != nil {
+			t.Fatalf("LoadFSM failed: %v", err)
+		}
+		if f.CurrentState() != StatePaused {
+			t.Errorf("Expected loaded state %s, got %s", StatePaused, f.CurrentState())
+		}
+		if f.machineID != machineID {
+			t.Errorf("Expected machineID %s, got %s", machineID, f.machineID)
+		}
+	})
+
+	t.Run("Load non-existent FSM", func(t *testing.T) {
+		machineID := "non_existent_machine"
+		_, err := LoadFSM(ctx, client, machineID, transitions)
+		if err == nil {
+			t.Fatalf("Expected error for non-existent machine, got nil")
+		}
+		if !ent.IsNotFound(err) {
+			t.Errorf("Expected IsNotFound error, got %v", err)
+		}
+	})
+
+	t.Run("Load FSM with nil client", func(t *testing.T) {
+		_, err := LoadFSM(ctx, nil, "some_id", transitions)
+		if err == nil {
+			t.Fatalf("Expected error for nil client, got nil")
+		}
+		if err.Error() != "client and machineID are required to load an FSM" {
+			t.Errorf("Expected specific error message, got %v", err)
+		}
+	})
+
+	t.Run("Load FSM with empty machineID", func(t *testing.T) {
+		_, err := LoadFSM(ctx, client, "", transitions)
+		if err == nil {
+			t.Fatalf("Expected error for empty machineID, got nil")
+		}
+		if err.Error() != "client and machineID are required to load an FSM" {
+			t.Errorf("Expected specific error message, got %v", err)
+		}
+	})
+
+	t.Run("Load FSM with duplicate transitions in definition", func(t *testing.T) {
+		machineID := "load_test_machine_2"
+		// Pre-create a state machine in the DB
+		_, err := client.StateMachine.Create().
+			SetMachineID(machineID).
+			SetCurrentState(string(StateIdle)).
+			Save(ctx)
+		if err != nil {
+			t.Fatalf("Failed to pre-create state machine: %v", err)
+		}
+
+		duplicateTransitions := []Transition{
+			{From: StateIdle, Event: EventStart, To: StateRunning},
+			{From: StateIdle, Event: EventStart, To: StatePaused}, // Duplicate
+		}
+		_, err = LoadFSM(ctx, client, machineID, duplicateTransitions)
+		if err == nil {
+			t.Fatalf("Expected error for duplicate transition during loading, got nil")
+		}
+		expectedErrorMsg := fmt.Sprintf("duplicate transition defined from state %s for event %s during FSM loading", StateIdle, EventStart)
+		if err.Error() != expectedErrorMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedErrorMsg, err.Error())
+		}
+	})
+}
+
 func TestCurrentState(t *testing.T) {
 	ctx := context.Background()
 	transitions := defineTestTransitions()
